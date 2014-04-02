@@ -5884,6 +5884,53 @@ static void wpas_ctrl_scan(struct wpa_supplicant *wpa_s, char *params,
 }
 
 
+static char *wpa_supplicant_ctrl_iface_get_msk(struct wpa_supplicant *wpa_s, int *resp_len)
+{
+	int res, msk_len, buf_len, i;
+	unsigned char *msk;
+	char *buf;
+
+	if (!wpa_s || !wpa_s->eapol) {
+		buf = os_malloc(13);
+		os_memcpy(buf, "NO MSK FOUND\n", 13);
+		*resp_len = 13;
+		return buf;
+	}
+
+	// There's no other way to get msk length ? Arrrrgg
+	msk_len = eapol_sm_get_key(wpa_s->eapol, NULL, -1);
+	if (msk_len <= 0) {
+		buf = os_malloc(13);
+		os_memcpy(buf, "NO MSK FOUND\n", 13);
+		*resp_len = 13;
+		return buf;
+	}
+
+	msk = malloc(msk_len);
+	res = eapol_sm_get_key(wpa_s->eapol, msk, msk_len);
+
+	if (res) {
+		// Huh? MSK was there a moment ago !
+		free(msk);
+		buf = os_malloc(13);
+		os_memcpy(buf, "NO MSK FOUND\n", 13);
+		*resp_len = 13;
+		return buf;
+	}
+
+	buf_len = 2 * msk_len +1;
+	buf = os_malloc(buf_len);
+
+	for (i = 0; i < msk_len; i++) {
+		sprintf(buf+(2*i), "%02x", msk[i]);
+	}
+	buf[buf_len] = '\0';
+	free(msk);
+	*resp_len = strlen(buf);
+	return buf;
+}
+
+
 #ifdef CONFIG_TESTING_OPTIONS
 
 static void wpas_ctrl_iface_mgmt_tx_cb(struct wpa_supplicant *wpa_s,
@@ -6048,6 +6095,9 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strcmp(buf, "PMKSA") == 0) {
 		reply_len = wpa_sm_pmksa_cache_list(wpa_s->wpa, reply,
 						    reply_size);
+	} else if (os_strcmp(buf, "MSK") == 0) {
+		reply = wpa_supplicant_ctrl_iface_get_msk(wpa_s, 
+							  &reply_len);
 	} else if (os_strncmp(buf, "SET ", 4) == 0) {
 		if (wpa_supplicant_ctrl_iface_set(wpa_s, buf + 4))
 			reply_len = -1;
